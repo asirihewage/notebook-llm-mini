@@ -1,4 +1,4 @@
-# Offline AI Chat Application
+# Notebook LLM Mini - Offline AI Notekeeper
 
 This application is an **offline, desktop AI assistant** built with **Electron** and **node-llama-cpp**, designed for domain-specific knowledge management, incident triage, and downstream service memorization.
 
