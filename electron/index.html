@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Offline AI</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        }
+
+        body {
+            background: #0f172a;
+            color: #e5e7eb;
+            height: 100vh;
+            display: flex;
+        }
+
+        /* ===== Layout ===== */
+        .app {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ===== Sidebar ===== */
+        .sidebar {
+            width: 260px;
+            background: #020617;
+            border-right: 1px solid #1e293b;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .new-chat {
+            width: 100%;
+            padding: 10px;
+            background: #2563eb;
+            border: none;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .chat-item {
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: #cbd5f5;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
+        .chat-item:hover {
+            background: #1e293b;
+        }
+
+        .chat-item.active {
+            background: #2563eb;
+            color: white;
+        }
+
+        /* ===== Main ===== */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .message {
+            max-width: 760px;
+            margin: 0 auto 18px auto;
+            line-height: 1.6;
+            font-size: 15px;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            color: #93c5fd;
+        }
+
+        .assistant {
+            color: #e5e7eb;
+        }
+
+        /* ===== Input ===== */
+        .input-area {
+            padding: 16px;
+            border-top: 1px solid #1e293b;
+            background: #020617;
+        }
+
+        .input-box {
+            max-width: 760px;
+            margin: 0 auto;
+            display: flex;
+            gap: 10px;
+        }
+
+        textarea {
+            flex: 1;
+            resize: none;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: white;
+            height: 52px;
+            font-size: 14px;
+        }
+
+        button.send {
+            padding: 0 20px;
+            border-radius: 10px;
+            border: none;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .empty {
+            text-align: center;
+            opacity: 0.5;
+            margin-top: 120px;
+        }
+    </style>
+</head>
+
+<body>
+<div class="app">
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <button class="new-chat" onclick="newChat()">+ New Chat</button>
+        </div>
+        <div class="history" id="history"></div>
+    </div>
+
+    <!-- Main -->
+    <div class="main">
+        <div class="messages" id="messages">
+            <div class="empty">Start a conversation…</div>
+        </div>
+
+        <div class="input-area">
+            <div class="input-box">
+                <textarea id="prompt" placeholder="Ask anything…"></textarea>
+                <button class="send" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let chats = [];
+    let currentChatId = null;
+    let streamingMsg = null;
+
+    /* =========================
+       Persistence
+    ========================= */
+
+    async function loadChats() {
+        chats = await window.ai.loadChats();
+        if (!chats.length) newChat();
+        else {
+            currentChatId = chats[0].id;
+            renderHistory();
+            renderMessages();
+        }
+    }
+
+    function saveChats() {
+        window.ai.saveChats(chats);
+    }
+
+    /* =========================
+       Streaming listener
+    ========================= */
+
+    window.ai.onStream((msg) => {
+        if (!streamingMsg) return;
+
+        if (msg.type === "token") {
+            streamingMsg.content += msg.token;
+            renderMessages();
+        }
+
+        if (msg.type === "done") {
+            streamingMsg = null;
+            saveChats();
+        }
+    });
+
+    /* =========================
+       Chat Management
+    ========================= */
+
+    function newChat() {
+        const id = Date.now().toString();
+        chats.unshift({ id, title: "New chat", messages: [] });
+        currentChatId = id;
+        renderHistory();
+        renderMessages();
+        saveChats();
+    }
+
+    function getCurrentChat() {
+        return chats.find(c => c.id === currentChatId);
+    }
+
+    /* =========================
+       Rendering
+    ========================= */
+
+    function renderHistory() {
+        const history = document.getElementById("history");
+        history.innerHTML = "";
+
+        chats.forEach(chat => {
+            const div = document.createElement("div");
+            div.className = "chat-item" + (chat.id === currentChatId ? " active" : "");
+            div.textContent = chat.title;
+            div.onclick = () => {
+                currentChatId = chat.id;
+                renderHistory();
+                renderMessages();
+            };
+            history.appendChild(div);
+        });
+    }
+
+    function renderMessages() {
+        const container = document.getElementById("messages");
+        const chat = getCurrentChat();
+
+        if (!chat || chat.messages.length === 0) {
+            container.innerHTML = `<div class="empty">Start a conversation…</div>`;
+            return;
+        }
+
+        container.innerHTML = "";
+
+        chat.messages.forEach(m => {
+            const div = document.createElement("div");
+            div.className = "message " + m.role;
+            div.textContent = m.content;
+            container.appendChild(div);
+        });
+
+        container.scrollTop = container.scrollHeight;
+    }
+
+    /* =========================
+       Send Message (STREAMING)
+    ========================= */
+
+    async function sendMessage() {
+        const input = document.getElementById("prompt");
+        const text = input.value.trim();
+        if (!text) return;
+
+        if (!currentChatId) newChat();
+        const chat = getCurrentChat();
+
+        chat.messages.push({ role: "user", content: text });
+        input.value = "";
+
+        if (chat.title === "New chat") {
+            chat.title = text.slice(0, 30);
+        }
+
+        streamingMsg = { role: "assistant", content: "" };
+        chat.messages.push(streamingMsg);
+
+        renderHistory();
+        renderMessages();
+
+        await window.ai.ask(text);
+    }
+
+    /* =========================
+       Init
+    ========================= */
+
+    (async () => {
+        await window.ai.ensureModel();
+        await loadChats();
+    })();
+</script>
+</body>
+</html>
